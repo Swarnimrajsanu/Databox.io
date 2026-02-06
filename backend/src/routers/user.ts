@@ -36,24 +36,20 @@ router.get("/presignedUrl", authMiddleware, async (req,res) => {
 
     const { url, fields } = await createPresignedPost(s3Client, {
         Bucket: 'task-to-reward',
-        Key: `thumbnails/${userId}/${Math.random()}/image.jpg`,
+        Key: `thumbnails/${userId}/${Math.random()}/image.jpg`, // Use backticks, not single quotes
         Conditions: [
           ['content-length-range', 0, 5 * 1024 * 1024] // 5 MB max
         ],
         Fields: {
-            success_action_status: '201',
             'Content-Type': 'image/jpeg'
         },
         Expires: 3600
     })
 
-    console.log(url, fields)
-
     res.json({
         preSignedUrl: url,
+        fields: fields // Return fields to client as well
     })
-
-    
 })
 
 //sigin with wallet
