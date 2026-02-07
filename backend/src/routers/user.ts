@@ -4,8 +4,11 @@ import { PrismaClient } from '@prisma/client';
 import "dotenv/config";
 import { Router } from 'express';
 import jwt from 'jsonwebtoken';
+import { TOTAL_DECIMALS } from "../config.js";
 import { authMiddleware } from '../middleware.js';
+import { createTaskInput } from "../types.js";
 
+const DEFAULT_TITLE = "Select the most clickable thumbnail";
 
 declare global {
   namespace Express {
@@ -30,6 +33,47 @@ const s3Client = new S3Client({
   },
 });
 
+router.post("/task", authMiddleware, async (req, res) => {
+    const userId = Number(req.userId);
+    const body = req.body;
+
+    const parseData = createTaskInput.safeParse(body);
+
+    const user = await prisma.user.findFirst({
+        where: {
+            id: userId,
+        },
+    })
+
+    if (!parseData.success) {
+        return res.status(411).json({ message: "You have send wrong input" });
+    }
+
+    let response = await prisma.$transaction(async tx => {
+        const response = await tx.task.create({
+            data: {
+                title: parseData.data.title ?? DEFAULT_TITLE,
+                amount : 0.1 * TOTAL_DECIMALS,
+                signature: parseData.data.signature,
+                user_id: userId
+            }
+        });
+
+        await tx.option.createMany({
+            data: parseData.data.options.map((option) => ({
+                image_url: option.imageUrl,
+                task_id: response.id,
+            }))
+        })
+
+        return response;
+    })
+
+    res.json({
+        id: response.id
+    })
+
+})
 
 router.get("/presignedUrl", authMiddleware, async (req,res) => { 
     const userId = req.userId;
