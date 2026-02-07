@@ -13,6 +13,22 @@ const router = Router();
 export const WORKER_JWT_SECRET = JWT_SECRET + "worker";
 const prisma = new PrismaClient({});
 
+router.get("/balance", workerMiddleware, async (req, res) => {
+    // @ts-ignore
+    const userId: string = req.userId;
+
+    const worker = await prisma.worker.findFirst({
+        where: {
+            id: Number(userId)
+        }
+    })
+
+    res.json({
+        pendingAmount: worker?.pending_amount,
+        lockedAmount: worker?.pending_amount,
+    })
+})
+
 router.post("/submission", workerMiddleware, async (req, res) => {
     // @ts-ignore
     const userId = Number(req.userId);
