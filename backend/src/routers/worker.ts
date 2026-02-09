@@ -13,6 +13,51 @@ const router = Router();
 export const WORKER_JWT_SECRET = JWT_SECRET + "worker";
 const prisma = new PrismaClient({});
 
+
+router.post("/payout", workerMiddleware, async (req, res) => {
+    // @ts-ignore
+    const userId: string = req.userId;
+    const worker = await prisma.worker.findFirst({
+        where: {
+            id: Number(userId)
+        }
+    })
+
+    if (!worker) {
+        return res.status(403).json({
+            message: "User not found"
+        })
+    }
+    const address = worker.address;
+
+    const txnId = "0x1234567890abcdef"; // Replace with actual transaction ID after processing payout
+    
+    // Reset pending and locked amounts after payout
+    await prisma.$transaction(async tx => {
+        await tx.worker.update({
+            where: {
+                id: Number(userId)
+            },
+            data: {
+                pending_amount: {
+                    decrement: worker.pending_amount
+                },
+                locked_amount: {
+                    increment: worker.locked_amount
+                }
+            }
+        })
+        await tx.payout.create({
+            data: {
+                user_id: Number(userId),
+                amount: worker.pending_amount,
+                status: "Processing",
+                signature: txnId
+            }
+        })
+    })
+})
+
 router.get("/balance", workerMiddleware, async (req, res) => {
     // @ts-ignore
     const userId: string = req.userId;
@@ -105,35 +150,33 @@ router.get("/nextTask", workerMiddleware, async (req, res) => {
 
 
 router.post("/signin", async (req, res) => {
-        const hardcoderWalletAddress = "GiTMh2s9Ynk8wVtYcjPCpzwKJiVapre2rQTNuaiob9dj"
+    const hardcodedWalletAddress = "GiTMh2s9Ynk8wVtYcjPCpzwKJiVapre2rQTNuaiob9dj"
 
-        const existingUser = await prisma.worker.findFirst({
-            where: {
-                address: hardcoderWalletAddress,
+    const existingUser = await prisma.worker.findUnique({
+        where: {
+            address: hardcodedWalletAddress
+        }
+    })
+
+    if (existingUser) {
+        const token = jwt.sign({
+            userId: existingUser.id,
+        }, WORKER_JWT_SECRET)
+        res.json({ token })
+    } else {
+        const worker = await prisma.worker.create({
+            data: {
+                address: hardcodedWalletAddress,
                 pending_amount: 0,
                 locked_amount: 0
             }
         })
 
-        if (existingUser) {
-
-            const token = jwt.sign({
-                userId: existingUser.id,
-            }, WORKER_JWT_SECRET)
-            res.json({ token })
-        } else {
-            const worker = await prisma.worker.create({
-                data: {
-                    address: hardcoderWalletAddress
-                }
-            })
-
-            const token = jwt.sign({
-                userId: worker.id,
-            }, WORKER_JWT_SECRET)
-            res.json({ token })
-        }
-            
-    });
+        const token = jwt.sign({
+            userId: worker.id,
+        }, WORKER_JWT_SECRET)
+        res.json({ token })
+    }
+});
 
 export default router;
