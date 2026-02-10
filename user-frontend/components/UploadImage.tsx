@@ -10,39 +10,40 @@ export function UploadImage({ onImageAdded, image }: {
     const [uploading, setUploading] = useState(false);
 
     async function onFileSelect(e: any) {
-    setUploading(true);
-    try {
-        const file = e.target.files[0];
-        const token = localStorage.getItem("token");
-        
-        // Debug: Check if token exists
-        console.log("Token:", token);
-        
-        if (!token) {
-            alert("Please login first");
-            setUploading(false);
-            return;
-        }
-        
-        const response = await axios.get(`${BACKEND_URL}/v1/user/presignedUrl`, {
-            headers: {
-                "Authorization": token
+        setUploading(true);
+        try {
+            const file = e.target.files[0];
+            const token = localStorage.getItem("token");
+
+            // Debug: Check if token exists
+            console.log("Token:", token);
+
+            if (!token) {
+                alert("Please login first");
+                setUploading(false);
+                return;
             }
-        });
-        const presignedUrl = response.data.preSignedUrl;
+
+            const response = await axios.get(`${BACKEND_URL}/v1/user/presignedUrl`, {
+                headers: {
+                    "Authorization": token
+                }
+            });
+            const presignedUrl = response.data.preSignedUrl;
             const formData = new FormData();
-            formData.set("bucket", response.data.fields["bucket"])
-            formData.set("X-Amz-Credential", response.data.fields["X-Amz-Credential"]);
-            formData.set("X-Amz-Algorithm", response.data.fields["X-Amz-Algorithm"]);
-            formData.set("X-Amz-Date", response.data.fields["X-Amz-Date"]);
-            formData.set("key", response.data.fields["key"]);
-            formData.set("Policy", response.data.fields["Policy"]);
-            formData.set("X-Amz-Signature", response.data.fields["X-Amz-Signature"]);
+
+            // Append all fields returned by the presigned URL
+            Object.keys(response.data.fields).forEach(key => {
+                formData.append(key, response.data.fields[key]);
+            });
+
+            // Append the file properly
             formData.append("file", file);
+
             const awsResponse = await axios.post(presignedUrl, formData);
 
             onImageAdded(`${CLOUDFRONT_URL}/${response.data.fields["key"]}`);
-        } catch(e) {
+        } catch (e) {
             console.log(e)
         }
         setUploading(false);
@@ -54,11 +55,11 @@ export function UploadImage({ onImageAdded, image }: {
 
     return <div>
         <div className="w-40 h-40 rounded border text-2xl cursor-pointer">
-                <div className="h-full flex justify-center flex-col relative w-full">
-                    <div className="h-full flex justify-center w-full pt-16 text-4xl">
+            <div className="h-full flex justify-center flex-col relative w-full">
+                <div className="h-full flex justify-center w-full pt-16 text-4xl">
                     {uploading ? <div className="text-sm">Loading...</div> : <>
                         +
-                        <input className="w-full h-full bg-red-400 w-40 h-40" type="file" style={{position: "absolute", opacity: 0, top: 0, left: 0, bottom: 0, right: 0, width: "100%", height: "100%"}} onChange={onFileSelect} />
+                        <input className="w-full h-full bg-red-400 w-40 h-40" type="file" style={{ position: "absolute", opacity: 0, top: 0, left: 0, bottom: 0, right: 0, width: "100%", height: "100%" }} onChange={onFileSelect} />
                     </>}
                 </div>
             </div>
