@@ -5,6 +5,10 @@ import { BACKEND_URL } from '@/utils';
 import axios from 'axios';
 import { useEffect, useState } from 'react';
 
+import { useParams } from 'next/navigation';
+
+// ... imports
+
 async function getTaskDetails(taskId: string) {
     const response = await axios.get(`${BACKEND_URL}/v1/user/task?taskId=${taskId}`, {
         headers: {
@@ -14,9 +18,10 @@ async function getTaskDetails(taskId: string) {
     return response.data
 }
 
-export default function Page({params: { 
-    taskId 
-}}: {params: { taskId: string }}) {
+export default function Page() {
+    const params = useParams();
+    const taskId = params.taskId as string;
+
     const [result, setResult] = useState<Record<string, {
         count: number;
         option: {
@@ -28,6 +33,7 @@ export default function Page({params: {
     }>({});
 
     useEffect(() => {
+        if (!taskId) return;
         getTaskDetails(taskId)
             .then((data) => {
                 setResult(data.result)
@@ -41,12 +47,12 @@ export default function Page({params: {
             {taskDetails.title}
         </div>
         <div className='flex justify-center pt-8'>
-            {Object.keys(result || {}).map(taskId => <Task imageUrl={result[taskId].option.imageUrl} votes={result[taskId].count} />)}
+            {Object.keys(result || {}).map(taskId => <Task key={taskId} imageUrl={result[taskId].option.imageUrl} votes={result[taskId].count} />)}
         </div>
     </div>
 }
 
-function Task({imageUrl, votes}: {
+function Task({ imageUrl, votes }: {
     imageUrl: string;
     votes: number;
 }) {

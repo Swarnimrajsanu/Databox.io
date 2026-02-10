@@ -7,29 +7,30 @@ import { useState } from "react";
 export const Upload = () => {
     const [images, setImages] = useState<string[]>([]);
     const [title, setTitle] = useState("");
-    const [txSignature, setTxSignature] = useState<string>("");
+    const [txSignature, setTxSignature] = useState("");
     const router = useRouter();
 
-    async function makePayment() {
-        // TODO: Implement payment logic here
-        alert("Payment functionality not implemented yet.");
-    }
-
     async function onSubmit() {
-        const response = await axios.post(`${BACKEND_URL}/v1/user/task`, {
-            options: images.map(image => ({
-                imageUrl: image,
-            })),
-            title,
-            signature: txSignature
-        }, {
-            headers: {
-                "Authorization": localStorage.getItem("token")
-            }
-        })
+        try {
+            const response = await axios.post(`${BACKEND_URL}/v1/user/task`, {
+                options: images.map(image => ({
+                    imageUrl: image,
+                })),
+                title,
+                signature: txSignature
+            }, {
+                headers: {
+                    "Authorization": localStorage.getItem("token")
+                }
+            })
 
-        router.push(`/task/${response.data.id}`)
+            router.push(`/task/${response.data.id}`)
+        } catch (e) {
+            console.log(e);
+            alert("Error while submitting task")
+        }
     }
+
 
     return <div className="flex justify-center">
         <div className="max-w-screen-lg w-full">
@@ -57,8 +58,8 @@ export const Upload = () => {
             </div>
 
             <div className="flex justify-center">
-                <button onClick={txSignature ? onSubmit : makePayment} type="button" className="mt-4 text-white bg-gray-800 hover:bg-gray-900 focus:outline-none focus:ring-4 focus:ring-gray-300 font-medium rounded-full text-sm px-5 py-2.5 me-2 mb-2 dark:bg-gray-800 dark:hover:bg-gray-700 dark:focus:ring-gray-700 dark:border-gray-700">
-                    {txSignature ? "Submit Task" : "Pay 0.1 SOL"}
+                <button onClick={onSubmit} type="button" className="mt-4 text-white bg-gray-800 hover:bg-gray-900 focus:outline-none focus:ring-4 focus:ring-gray-300 font-medium rounded-full text-sm px-5 py-2.5 me-2 mb-2 dark:bg-gray-800 dark:hover:bg-gray-700 dark:focus:ring-gray-700 dark:border-gray-700">
+                    Submit Task
                 </button>
             </div>
 

@@ -11,11 +11,11 @@ import { createTaskInput } from "../types.js";
 const DEFAULT_TITLE = "Select the most clickable thumbnail";
 
 declare global {
-  namespace Express {
-    interface Request {
-      userId?: string;
+    namespace Express {
+        interface Request {
+            userId?: string;
+        }
     }
-  }
 }
 
 
@@ -26,11 +26,11 @@ const router = Router();
 const prisma = new PrismaClient({});
 
 const s3Client = new S3Client({
-  region: process.env.AWS_REGION!,
-  credentials: {
-    accessKeyId: process.env.AWS_ACCESS_KEY_ID!,
-    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY!,
-  },
+    region: process.env.AWS_REGION!,
+    credentials: {
+        accessKeyId: process.env.AWS_ACCESS_KEY_ID!,
+        secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY!,
+    },
 });
 
 
@@ -39,6 +39,12 @@ router.get("/task", authMiddleware, async (req, res) => {
     const taskId: string = req.query.taskId;
     // @ts-ignore
     const userId: string = req.userId;
+
+    if (!taskId) {
+        return res.status(400).json({
+            message: "TaskId is required"
+        })
+    }
 
     const taskDetails = await prisma.task.findFirst({
         where: {
@@ -113,8 +119,8 @@ router.post("/task", authMiddleware, async (req, res) => {
         const response = await tx.task.create({
             data: {
                 title: parseData.data.title ?? DEFAULT_TITLE,
-                amount : 0.1 * TOTAL_DECIMALS,
-                signature: parseData.data.signature,
+                amount: 0.1 * TOTAL_DECIMALS,
+                //signature: parseData.data.signature,
                 user_id: userId
             }
         });
@@ -135,14 +141,14 @@ router.post("/task", authMiddleware, async (req, res) => {
 
 })
 
-router.get("/presignedUrl", authMiddleware, async (req,res) => { 
+router.get("/presignedUrl", authMiddleware, async (req, res) => {
     const userId = req.userId;
 
     const { url, fields } = await createPresignedPost(s3Client, {
         Bucket: 'task-to-reward',
         Key: `thumbnails/${userId}/${Math.random()}/image.jpg`, // Use backticks, not single quotes
         Conditions: [
-          ['content-length-range', 0, 5 * 1024 * 1024] // 5 MB max
+            ['content-length-range', 0, 5 * 1024 * 1024] // 5 MB max
         ],
         Fields: {
             'Content-Type': 'image/jpeg'
@@ -160,34 +166,34 @@ router.get("/presignedUrl", authMiddleware, async (req,res) => {
 //signing a message
 
 router.post("/signin", async (req, res) => {
-        const hardcoderWalletAddress = "GiTMh2s9Ynk8wVtYcjPCpzwKJiVapre2rQTNuaiob9dh"
+    const hardcoderWalletAddress = "GiTMh2s9Ynk8wVtYcjPCpzwKJiVapre2rQTNuaiob9dh"
 
-        const existingUser = await prisma.user.findFirst({
-            where: {
+    const existingUser = await prisma.user.findFirst({
+        where: {
+            address: hardcoderWalletAddress
+        }
+    })
+
+    if (existingUser) {
+
+        const token = jwt.sign({
+            userId: existingUser.id,
+        }, JWT_SECRET)
+        res.json({ token })
+    } else {
+        const user = await prisma.user.create({
+            data: {
                 address: hardcoderWalletAddress
             }
         })
 
-        if (existingUser) {
+        const token = jwt.sign({
+            userId: user.id,
+        }, JWT_SECRET)
+        res.json({ token })
+    }
 
-            const token = jwt.sign({
-                userId: existingUser.id,
-            }, JWT_SECRET)
-            res.json({ token })
-        } else {
-            const user = await prisma.user.create({
-                data: {
-                    address: hardcoderWalletAddress
-                }
-            })
-
-            const token = jwt.sign({
-                userId: user.id,
-            }, JWT_SECRET)
-            res.json({ token })
-        }
-            
-    });
+});
 
 export default router;
 
