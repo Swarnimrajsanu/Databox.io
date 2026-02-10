@@ -1,4 +1,5 @@
 "use client"
+
 import Appbar from "@/components/Appbar";
 import { Hero } from "@/components/Hero";
  
