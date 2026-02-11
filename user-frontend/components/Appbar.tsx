@@ -1,12 +1,20 @@
 "use client";
 import { BACKEND_URL } from '@/utils';
 import { useWallet } from '@solana/wallet-adapter-react';
-import {
-  WalletDisconnectButton,
-  WalletMultiButton
-} from '@solana/wallet-adapter-react-ui';
 import axios from 'axios';
+import dynamic from 'next/dynamic';
 import { useEffect } from 'react';
+
+// Dynamically import wallet buttons with ssr disabled
+const WalletMultiButton = dynamic(
+  async () => (await import('@solana/wallet-adapter-react-ui')).WalletMultiButton,
+  { ssr: false }
+);
+
+const WalletDisconnectButton = dynamic(
+  async () => (await import('@solana/wallet-adapter-react-ui')).WalletDisconnectButton,
+  { ssr: false }
+);
 
 const Appbar = () => {
   const { publicKey, signMessage } = useWallet();

@@ -1,5 +1,8 @@
+"use client";
 import { UploadImage } from "@/components/UploadImage";
 import { BACKEND_URL } from "@/utils";
+import { useConnection, useWallet } from '@solana/wallet-adapter-react';
+import { PublicKey, SystemProgram, Transaction } from '@solana/web3.js';
 import axios from "axios";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
@@ -8,29 +11,46 @@ export const Upload = () => {
     const [images, setImages] = useState<string[]>([]);
     const [title, setTitle] = useState("");
     const [txSignature, setTxSignature] = useState("");
+    const { publicKey, sendTransaction } = useWallet();
+    const { connection } = useConnection();
     const router = useRouter();
 
     async function onSubmit() {
-        try {
-            const response = await axios.post(`${BACKEND_URL}/v1/user/task`, {
-                options: images.map(image => ({
-                    imageUrl: image,
-                })),
-                title,
-                signature: txSignature
-            }, {
-                headers: {
-                    "Authorization": localStorage.getItem("token")
-                }
-            })
+        const response = await axios.post(`${BACKEND_URL}/v1/user/task`, {
+            options: images.map(image => ({
+                imageUrl: image,
+            })),
+            title,
+            signature: txSignature
+        }, {
+            headers: {
+                "Authorization": localStorage.getItem("token")
+            }
+        })
 
-            router.push(`/task/${response.data.id}`)
-        } catch (e) {
-            console.log(e);
-            alert("Error while submitting task")
-        }
+        router.push(`/task/${response.data.id}`)
     }
 
+    async function makePayment() {
+
+        const transaction = new Transaction().add(
+            SystemProgram.transfer({
+                fromPubkey: publicKey!,
+                toPubkey: new PublicKey("2KeovpYvrgpziaDsq8nbNMP4mc48VNBVXb5arbqrg9Cq"),
+                lamports: 100000000,
+            })
+        );
+
+        const {
+            context: { slot: minContextSlot },
+            value: { blockhash, lastValidBlockHeight }
+        } = await connection.getLatestBlockhashAndContext();
+
+        const signature = await sendTransaction(transaction, connection, { minContextSlot });
+
+        await connection.confirmTransaction({ blockhash, lastValidBlockHeight, signature });
+        setTxSignature(signature);
+    }
 
     return <div className="flex justify-center">
         <div className="max-w-screen-lg w-full">
@@ -46,7 +66,7 @@ export const Upload = () => {
 
             <label className="pl-4 block mt-8 text-md font-medium text-gray-900 text-black">Add Images</label>
             <div className="flex justify-center pt-4 max-w-screen-lg">
-                {images.map(image => <UploadImage key={image} image={image} onImageAdded={(imageUrl) => {
+                {images.map((image, index) => <UploadImage key={index} image={image} onImageAdded={(imageUrl) => {
                     setImages(i => [...i, imageUrl]);
                 }} />)}
             </div>
@@ -58,8 +78,8 @@ export const Upload = () => {
             </div>
 
             <div className="flex justify-center">
-                <button onClick={onSubmit} type="button" className="mt-4 text-white bg-gray-800 hover:bg-gray-900 focus:outline-none focus:ring-4 focus:ring-gray-300 font-medium rounded-full text-sm px-5 py-2.5 me-2 mb-2 dark:bg-gray-800 dark:hover:bg-gray-700 dark:focus:ring-gray-700 dark:border-gray-700">
-                    Submit Task
+                <button onClick={txSignature ? onSubmit : makePayment} type="button" className="mt-4 text-white bg-gray-800 hover:bg-gray-900 focus:outline-none focus:ring-4 focus:ring-gray-300 font-medium rounded-full text-sm px-5 py-2.5 me-2 mb-2 dark:bg-gray-800 dark:hover:bg-gray-700 dark:focus:ring-gray-700 dark:border-gray-700">
+                    {txSignature ? "Submit Task" : "Pay 0.1 SOL"}
                 </button>
             </div>
 

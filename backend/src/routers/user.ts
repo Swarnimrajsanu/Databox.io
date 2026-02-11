@@ -1,38 +1,43 @@
-import { S3Client, } from "@aws-sdk/client-s3";
-import { createPresignedPost } from "@aws-sdk/s3-presigned-post";
-import { PrismaClient } from '@prisma/client';
-import "dotenv/config";
-import { Router } from 'express';
-import jwt from 'jsonwebtoken';
-import { TOTAL_DECIMALS } from "../config.js";
-import { authMiddleware } from '../middleware.js';
+import { S3Client } from '@aws-sdk/client-s3';
+import { createPresignedPost } from '@aws-sdk/s3-presigned-post';
+import { PrismaClient } from "@prisma/client";
+import { Connection, PublicKey } from "@solana/web3.js";
+import { Router } from "express";
+import jwt from "jsonwebtoken";
+import nacl from "tweetnacl";
+import { JWT_SECRET, TOTAL_DECIMALS } from "../config.js";
+import { authMiddleware } from "../middleware.js";
 import { createTaskInput } from "../types.js";
+
+const connection = new Connection(process.env.RPC_URL ?? "");
+
+const PARENT_WALLET_ADDRESS = "G939oJyfBMimt2PwWSaudF1VgKr5ZgSXHjcsZnnMMFc1";
 
 const DEFAULT_TITLE = "Select the most clickable thumbnail";
 
-declare global {
-    namespace Express {
-        interface Request {
-            userId?: string;
-        }
-    }
-}
 
-
-const JWT_SECRET = "billubadmosh"
+const s3Client = new S3Client({
+    credentials: {
+        accessKeyId: process.env.AWS_ACCESS_KEY_ID ?? "",
+        secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY ?? "",
+    },
+    region: "eu-north-1"
+})
 
 const router = Router();
 
-const prisma = new PrismaClient({});
+const prismaClient = new PrismaClient();
 
-const s3Client = new S3Client({
-    region: process.env.AWS_REGION!,
-    credentials: {
-        accessKeyId: process.env.AWS_ACCESS_KEY_ID!,
-        secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY!,
+
+prismaClient.$transaction(
+    async (prisma) => {
+        // Code running in a transaction...
     },
-});
-
+    {
+        maxWait: 5000, // default: 2000
+        timeout: 10000, // default: 5000
+    }
+)
 
 router.get("/task", authMiddleware, async (req, res) => {
     // @ts-ignore
@@ -40,13 +45,7 @@ router.get("/task", authMiddleware, async (req, res) => {
     // @ts-ignore
     const userId: string = req.userId;
 
-    if (!taskId) {
-        return res.status(400).json({
-            message: "TaskId is required"
-        })
-    }
-
-    const taskDetails = await prisma.task.findFirst({
+    const taskDetails = await prismaClient.task.findFirst({
         where: {
             user_id: Number(userId),
             id: Number(taskId)
@@ -63,7 +62,7 @@ router.get("/task", authMiddleware, async (req, res) => {
     }
 
     // Todo: Can u make this faster?
-    const responses = await prisma.submission.findMany({
+    const responses = await prismaClient.submission.findMany({
         where: {
             task_id: Number(taskId)
         },
@@ -100,39 +99,74 @@ router.get("/task", authMiddleware, async (req, res) => {
 })
 
 router.post("/task", authMiddleware, async (req, res) => {
-    const userId = Number(req.userId);
+    //@ts-ignore
+    const userId = req.userId
+    // validate the inputs from the user;
     const body = req.body;
 
     const parseData = createTaskInput.safeParse(body);
 
-    const user = await prisma.user.findFirst({
+    const user = await prismaClient.user.findFirst({
         where: {
-            id: userId,
-        },
+            id: userId
+        }
     })
 
     if (!parseData.success) {
-        return res.status(411).json({ message: "You have send wrong input" });
+        return res.status(411).json({
+            message: "You've sent the wrong inputs"
+        })
     }
 
-    let response = await prisma.$transaction(async tx => {
+    const transaction = await connection.getTransaction(parseData.data.signature, {
+        maxSupportedTransactionVersion: 1
+    });
+
+    console.log(transaction);
+
+    if ((transaction?.meta?.postBalances[1] ?? 0) - (transaction?.meta?.preBalances[1] ?? 0) !== 100000000) {
+        return res.status(411).json({
+            message: "Transaction signature/amount incorrect"
+        })
+    }
+
+    if (transaction?.transaction.message.getAccountKeys().get(1)?.toString() !== PARENT_WALLET_ADDRESS) {
+        return res.status(411).json({
+            message: "Transaction sent to wrong address"
+        })
+    }
+
+    if (transaction?.transaction.message.getAccountKeys().get(0)?.toString() !== user?.address) {
+        return res.status(411).json({
+            message: "Transaction sent to wrong address"
+        })
+    }
+    // was this money paid by this user address or a different address?
+
+    // parse the signature here to ensure the person has paid 0.1 SOL
+    // const transaction = Transaction.from(parseData.data.signature);
+
+    let response = await prismaClient.$transaction(async tx => {
+
         const response = await tx.task.create({
             data: {
                 title: parseData.data.title ?? DEFAULT_TITLE,
                 amount: 0.1 * TOTAL_DECIMALS,
-                //signature: parseData.data.signature,
+                //TODO: Signature should be unique in the table else people can reuse a signature
+                signature: parseData.data.signature,
                 user_id: userId
             }
         });
 
         await tx.option.createMany({
-            data: parseData.data.options.map((option) => ({
-                image_url: option.imageUrl,
-                task_id: response.id,
+            data: parseData.data.options.map(x => ({
+                image_url: x.imageUrl,
+                task_id: response.id
             }))
         })
 
         return response;
+
     })
 
     res.json({
@@ -142,58 +176,71 @@ router.post("/task", authMiddleware, async (req, res) => {
 })
 
 router.get("/presignedUrl", authMiddleware, async (req, res) => {
+    // @ts-ignore
     const userId = req.userId;
 
     const { url, fields } = await createPresignedPost(s3Client, {
         Bucket: 'task-to-reward',
-        Key: `thumbnails/${userId}/${Math.random()}/image.jpg`, // Use backticks, not single quotes
+        Key: `thumbnails/${userId}/${Math.random()}/image.jpg`,
         Conditions: [
             ['content-length-range', 0, 5 * 1024 * 1024] // 5 MB max
         ],
-        Fields: {
-            'Content-Type': 'image/jpeg'
-        },
         Expires: 3600
     })
 
     res.json({
         preSignedUrl: url,
-        fields: fields // Return fields to client as well
+        fields
     })
+
 })
 
-//sigin with wallet
-//signing a message
-
 router.post("/signin", async (req, res) => {
-    const hardcoderWalletAddress = "GiTMh2s9Ynk8wVtYcjPCpzwKJiVapre2rQTNuaiob9dh"
+    const { publicKey, signature } = req.body;
+    const message = new TextEncoder().encode("Sign into mechanical turks");
 
-    const existingUser = await prisma.user.findFirst({
+    const result = nacl.sign.detached.verify(
+        message,
+        new Uint8Array(signature.data),
+        new PublicKey(publicKey).toBytes(),
+    );
+
+
+    if (!result) {
+        return res.status(411).json({
+            message: "Incorrect signature"
+        })
+    }
+
+    const existingUser = await prismaClient.user.findFirst({
         where: {
-            address: hardcoderWalletAddress
+            address: publicKey
         }
     })
 
     if (existingUser) {
-
         const token = jwt.sign({
-            userId: existingUser.id,
+            userId: existingUser.id
         }, JWT_SECRET)
-        res.json({ token })
+
+        res.json({
+            token
+        })
     } else {
-        const user = await prisma.user.create({
+        const user = await prismaClient.user.create({
             data: {
-                address: hardcoderWalletAddress
+                address: publicKey,
             }
         })
 
         const token = jwt.sign({
-            userId: user.id,
+            userId: user.id
         }, JWT_SECRET)
-        res.json({ token })
-    }
 
+        res.json({
+            token
+        })
+    }
 });
 
 export default router;
-

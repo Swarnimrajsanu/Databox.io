@@ -15,7 +15,7 @@ export default function RootLayout({
     const network = WalletAdapterNetwork.Mainnet;
 
     // You can also provide a custom RPC endpoint.
-    const endpoint = "https://api.mainnet-beta.solana.com";
+    const endpoint = "https://go.getblock.us/21856b6f499943ea89828acf8c7bdda7";
 
     const wallets = useMemo(
         () => [],
